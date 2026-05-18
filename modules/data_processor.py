@@ -8,7 +8,7 @@ class DataProcessor:
     """
     负责加载、读取和切分原始文档数据的处理器
     """
-    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
+    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50) -> None:
         """
         初始化文本切分器
         :param chunk_size: 切分块的大小（字符数）

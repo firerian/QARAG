@@ -6,3 +6,7 @@ chroma_data/
 __pycache__/
 *.py[cod]
 .git/
+.trae/
+.pytest_cache/
+logs/
+.coverage

@@ -1,92 +1,93 @@
-import os
-from langchain_ollama import ChatOllama,OllamaEmbeddings
+from typing import Any, Optional
+
+from langchain_ollama import OllamaEmbeddings
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from modules.config import get_config
+from modules.logger import get_logger
+from modules.prompts import build_prompt
+
 load_dotenv()
 
+logger = get_logger(__name__)
 
+config = get_config()
 
-EMBEDDING_MODEL = "bge-m3:567m"  # 嵌入模型
-CHAT_MODEL = "deepseek-r1:1.5b"  # 聊天模型（请确保你本地有这个模型，可以用 ollama list 查看）
+embeddingllm = OllamaEmbeddings(model=config.embedding_model)
+llm = ChatOpenAI(
+    api_key=config.llm_api_key,
+    model=config.llm_model,
+    base_url=config.llm_base_url,
+    temperature=config.temperature,
+    max_tokens=config.max_tokens
+)
 
-
-embeddingllm = OllamaEmbeddings(model=EMBEDDING_MODEL)
-llm =  ChatOpenAI(
-    api_key = os.getenv("LLM_API_KEY"),
-    model=os.getenv("LLM_MODEL"),
-    base_url=os.getenv("LLM_BASE_URL"),
-    temperature = os.getenv("TEMPERATURE"),
-    max_tokens = os.getenv("MAX_TOKENS")
+llm_retry = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((Exception,)),
+    reraise=True
 )
 
 
-def get_llm_answer(vector_db,user_query,llm = llm):
-    results = vector_db.search(user_query, 5)
-    # 提取相关文档内容
-    if results['documents'] and results['documents'][0]:
-        contents = '\n'.join(results['documents'][0])
-        print("\n--- 检索到的相关片段 ---")
-        print(contents)
-        print('-' * 100)
-    else:
-        contents = ""
-        print("未检索到相关文档！")
-    # 5. 构造 Prompt
-    prompt = f"""
-   你是一个严格的问答机器人。请严格遵守以下规则：
-    1. 严禁使用你自身的训练数据、常识或外部知识进行回答,不要自行总结，严格按照【已知信息】来回答问题。
-    2. 如果【已知信息】中没有直接包含回答用户问题所需的内容，你必须且只能回复：“我无法回答您的问题”。
-    3. 即使你知道答案，但只要【已知信息】里没有，就视为不知道。
-    【已知信息】
-    {contents}
-    ----
-    用户问：
-    {user_query}
-    请用中文回答用户问题。
-    """
-    print(prompt)
+@llm_retry
+def _invoke_llm(_llm, prompt: str) -> Any:
+    return _llm.invoke(prompt)
+
+
+def check_embedding_health() -> bool:
     try:
-        print("\n--- AI 回答 ---")
-        response_text = llm.invoke(prompt)
-        print(response_text.content)
+        embeddingllm.embed_query("health_check")
+        logger.info("Embedding 服务健康检查通过")
+        return True
     except Exception as e:
-        print(f"调用 Ollama 聊天接口失败: {e}")
-        print("请确保 Ollama 正在运行，且已拉取模型: ollama pull " + CHAT_MODEL)
+        logger.error(f"Embedding 服务健康检查失败: {e}")
+        return False
 
 
-
-
-def get_llm_answer2(vector_db,user_query,llm = llm):
-    results = vector_db.hybrid_search(user_query, 5)
-    # 提取相关文档内容
-    if results:
-        contents = '\n'.join(results)
-        print("\n--- 检索到的相关片段 ---")
-        print(contents)
-        print('-' * 100)
+def get_llm_answer(vector_db, user_query, llm=llm, retriever_type: str = "hybrid", prompt_strategy: str = "strict") -> Optional[str]:
+    if retriever_type == "hybrid":
+        results = vector_db.hybrid_search(user_query, 5)
+        if results:
+            contents = '\n'.join(results)
+            logger.info("--- 检索到的相关片段 ---")
+            logger.debug(contents)
+            logger.info('-' * 100)
+        else:
+            contents = ""
+            logger.info("未检索到相关文档！")
+    elif retriever_type == "default":
+        results = vector_db.search(user_query, 5)
+        if results['documents'] and results['documents'][0]:
+            contents = '\n'.join(results['documents'][0])
+            logger.info("--- 检索到的相关片段 ---")
+            logger.debug(contents)
+            logger.info('-' * 100)
+        else:
+            contents = ""
+            logger.info("未检索到相关文档！")
     else:
-        contents = ""
-        print("未检索到相关文档！")
-    # 5. 构造 Prompt
-    prompt = f"""
-    你是一个严格的问答机器人。请严格遵守以下规则：
-    1. 严禁使用你自身的训练数据、常识或外部知识进行回答,不要自行总结，严格按照【已知信息】来回答问题。
-    2. 如果【已知信息】中没有直接包含回答用户问题所需的内容，你必须且只能回复：“我无法回答您的问题”。
-    3. 即使你知道答案，但只要【已知信息】里没有，就视为不知道。
-    【已知信息】
-    {contents}
-    ----
-    用户问：
-    {user_query}
-    请用中文回答用户问题。
-    """
-    print(prompt)
+        raise ValueError(f"不支持的 retriever_type: {retriever_type}，可选值为 'hybrid' 或 'default'")
+
+    prompt = build_prompt(strategy=prompt_strategy, contents=contents, user_query=user_query)
+    logger.info(prompt)
     try:
-        print("\n--- AI 回答 ---")
-        response_text = llm.invoke(prompt)
-        print(response_text.content)
+        logger.info("--- AI 回答 ---")
+        response_text = _invoke_llm(llm, prompt)
+        logger.info(response_text.content)
+        token_usage = response_text.response_metadata.get("token_usage", {})
+        if token_usage:
+            prompt_tokens = token_usage.get("prompt_tokens", 0)
+            completion_tokens = token_usage.get("completion_tokens", 0)
+            total_tokens = token_usage.get("total_tokens", 0)
+            logger.info(f"Token 消耗 - prompt: {prompt_tokens}, completion: {completion_tokens}, total: {total_tokens}")
     except Exception as e:
-        print(f"调用 Ollama 聊天接口失败: {e}")
+        logger.error(f"调用 LLM 接口失败: {e}")
+        logger.warning("所有重试均失败，返回降级消息")
+        return "抱歉，AI 服务暂时不可用，请稍后重试。"
 
 
-
+def get_llm_answer2(vector_db, user_query, llm=llm, prompt_strategy: str = "strict") -> Optional[str]:
+    logger.warning("get_llm_answer2 已弃用，请使用 get_llm_answer(vdb, q, retriever_type='hybrid')")
+    return get_llm_answer(vector_db, user_query, llm=llm, retriever_type="hybrid", prompt_strategy=prompt_strategy)
