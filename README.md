@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 
 # QA-RAG 智能问答系统
 
@@ -35,7 +34,7 @@
 ### 1. 安装依赖
 
 ```bash
-pip install -r  requirements.txt
+    pip install -r  requirements.txt
 ```
 
 ### 2. 安装并启动 Ollama
@@ -120,6 +119,17 @@ PROMPT_STRATEGY=strict
 | `--log-level`       | -    | string               | 无        | 覆盖日志级别           |
 | `--collection`      | `-c` | string               | `demo`   | 向量库集合名称          |
 | `--prompt-strategy` | -    | string               | `strict` | Prompt 策略        |
+| `--top-k`           | -    | int                  | `5`      | 检索返回的片段数量        |
+| `--parse-doc`       | -    | string               | 无        | 解析单个文档并输出片段      |
+| `--parse-doc-index` | -    | string               | 无        | 解析单个文档并索引到向量库    |
+| `--parse-dir`       | -    | string               | 无        | 批量解析目录并生成报告      |
+| `--parse-dir-index` | -    | string               | 无        | 批量解析目录并索引到向量库    |
+| `--chunk-size`      | -    | int                  | 环境变量值    | 分块大小             |
+| `--chunk-overlap`   | -    | int                  | 环境变量值    | 分块重叠量            |
+| `--parse-workers`   | -    | int                  | `4`      | 批量解析并发线程数        |
+| `--parse-timeout`   | -    | float                | `120.0`  | 单文件解析超时秒数        |
+| `--parse-max-size`  | -    | float                | `100.0`  | 单文件最大大小 (MB)     |
+| `--parse-output`    | -    | string               | 无        | 解析结果输出为 JSON 文件  |
 
 ### 数据导入
 
@@ -140,6 +150,54 @@ python main.py --ingest-text ./data/knowledge_base.txt
 ```bash
 python main.py --ingest-qa ./data/qa.jsonl -c my_collection
 ```
+
+### 文档解析与索引
+
+系统支持解析 PDF、HTML、Markdown 等格式的文档，并提供灵活的索引选项：
+
+**解析单个文档并输出片段：**
+
+```bash
+python main.py --parse-doc ./data/info.md
+```
+
+**解析文档并索引到向量库：**
+
+```bash
+python main.py --parse-doc-index ./data/info.md
+```
+
+**解析目录并生成报告（不索引）：**
+
+```bash
+python main.py --parse-dir ./data/docs/
+```
+
+**解析目录并索引到向量库：**
+
+```bash
+python main.py --parse-dir-index ./data/docs/
+```
+
+**自定义分块大小：**
+
+```bash
+python main.py --parse-doc-index ./data/info.md --chunk-size 800 --chunk-overlap 100
+```
+
+**输出解析结果为 JSON 文件：**
+
+```bash
+python main.py --parse-doc ./data/info.md --parse-output ./output/chunks.json
+```
+
+**支持的文档格式：**
+
+| 格式 | 扩展名 | 特性 |
+| ---- | ------ | ---- |
+| PDF | `.pdf` | 需要 PyMuPDF 依赖 |
+| HTML | `.html`, `.htm` | 需要 beautifulsoup4 依赖 |
+| Markdown | `.md`, `.markdown`, `.mdown`, `.mkd` | 原生支持，智能标题层级分块 |
 
 ### 单次提问
 
@@ -221,6 +279,33 @@ python main.py -q "测试问题" --log-level DEBUG
 | `CHUNK_OVERLAP` | 相邻切分块之间的重叠字符数 | 一般为 CHUNK\_SIZE 的 10%-20%   |
 
 较小的 `CHUNK_SIZE` 提高检索精度，较大的 `CHUNK_SIZE` 保留更多上下文。
+
+### Markdown 智能分块
+
+系统针对 Markdown 文档实现了基于标题层级的语义分块策略：
+
+- **标题保留**：每个分块自动携带完整的父级标题前缀（如 `# 被动信息收集 ## 工作流 ### Step 1`），确保语义完整
+- **结构化元数据**：分块元数据包含 `section_title`、`h1`、`h2`、`h3` 等字段，支持精细化检索过滤
+- **语义边界**：严格按照 Markdown 标题层级（`#` → `##` → `###`）划分内容，避免标题与正文分离
+
+### 混合检索与 Metadata Boost
+
+系统采用向量检索 + BM25 关键词检索的混合模式，并引入元数据增强机制：
+
+- **RRF 融合**：使用倒数排名融合算法（Reciprocal Rank Fusion）合并两类检索结果
+- **步骤优先**：自动为包含 "Step" 的分块增加检索分数，确保关键流程步骤优先召回
+- **精准控制**：通过 Metadata Boost，仅需 `top_k=5` 即可完整召回所有关键步骤，避免增大 `top_k` 带来的噪声和 Token 消耗
+
+典型效果示例：
+```
+查询: "被动信息收集流程"
+召回结果 (top_k=5):
+  1. Step 1：域名收集
+  2. Step 2：扩大攻击面
+  3. Step 3：收集子域名
+  4. Step 4：获取WEB资产
+  5. Step 5：被动指纹识别
+```
 
 ### 数据导入流程
 
@@ -370,6 +455,4 @@ pytest --cov=modules --cov-report=term-missing
 # QARAG
 
 基于 RAG 架构的智能问答系统 —— 混合向量/关键词检索 + 可配置 Prompt 策略 + 插件化检索引擎
-
-> > > > > > > 574106f2c070c3b3310409dab4182bc6b1d5f7b3
 
