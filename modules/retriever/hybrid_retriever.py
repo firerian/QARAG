@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 
 class HybridRetriever(BaseRetriever):
-    """混合检索器：融合向量检索与 BM25 关键词检索，通过 RRF 排序。"""
+    """混合检索器：融合向量检索与 BM25 关键词检索，通过 RRF 排序 + 重排序。"""
 
     def __init__(
         self,
@@ -21,7 +21,9 @@ class HybridRetriever(BaseRetriever):
         tokenized_corpus: List[List[str]],
         bm25: Optional[BM25Okapi],
         doc_ids: List[str],
-        rrf_k: int = 60,
+        rrf_k: Optional[int] = None,
+        bm25_k: Optional[int] = None,
+        vector_k: Optional[int] = None,
     ) -> None:
         """
         Args:
@@ -30,33 +32,71 @@ class HybridRetriever(BaseRetriever):
             tokenized_corpus: 已分词的语料库，用于 BM25 索引。
             bm25: BM25 索引实例，可为 None（空库时）。
             doc_ids: 文档 ID 列表，与 tokenized_corpus 一一对应。
-            rrf_k: RRF 融合算法的超参数 k，默认 60。
+            rrf_k: 向后兼容参数，若传入则同时用于 bm25_k 和 vector_k。
+            bm25_k: BM25 检索的 RRF k 参数，默认 30。
+            vector_k: 向量检索的 RRF k 参数，默认 60。
         """
         self._collection = collection
         self._embedding_client = embedding_client
         self._tokenized_corpus = tokenized_corpus
         self._bm25 = bm25
         self._doc_ids = doc_ids
-        self._rrf_k = rrf_k
+        if rrf_k is not None:
+            self._bm25_k = rrf_k
+            self._vector_k = rrf_k
+        else:
+            self._bm25_k = bm25_k if bm25_k is not None else 30
+            self._vector_k = vector_k if vector_k is not None else 60
+
+    def _get_metadata(self, doc_id: str) -> dict:
+        """获取指定文档的元数据。"""
+        try:
+            data = self._collection.get(ids=[doc_id], include=["metadatas"])
+            if data["metadatas"] and data["metadatas"][0]:
+                return data["metadatas"][0]
+        except Exception:
+            pass
+        return {}
 
     def search(self, query: str, top_k: int = 5) -> List[str]:
-        """混合检索：向量检索 + BM25 关键词检索 + RRF 融合排序。
+        """混合检索：向量检索 + BM25 关键词检索 + RRF 融合 + 结构化增强。
 
         Args:
             query: 用户查询文本。
             top_k: 返回的文档数量。
 
         Returns:
-            按 RRF 融合分数排序的文档文本列表。
+            按最终分数排序的文档文本列表。
         """
-        vector_ids = self._vector_search(query, top_k * 3)
-        bm25_ids = self._bm25_search(query, top_k * 2)
+        candidate_count = max(20, top_k * 4)
+        vector_ids = self._vector_search(query, candidate_count)
+        bm25_ids = self._bm25_search(query, candidate_count)
 
         if not vector_ids and not bm25_ids:
             logger.warning("混合检索：向量与BM25均未找到匹配文档")
             return []
 
-        sorted_ids = self._rrf_fusion(vector_ids, bm25_ids)[:top_k]
+        vector_rank = {doc_id: rank for rank, doc_id in enumerate(vector_ids)}
+        bm25_rank = {doc_id: rank for rank, doc_id in enumerate(bm25_ids)}
+
+        all_ids = list(set(vector_ids) | set(bm25_ids))
+        fused_docs: List[tuple] = []
+        for doc_id in all_ids:
+            vector_score = 1.0 / (self._vector_k + vector_rank.get(doc_id, candidate_count) + 1)
+            bm25_score = 1.0 / (self._bm25_k + bm25_rank.get(doc_id, candidate_count) + 1)
+            
+            # 结构化增强：识别并提升流程步骤类文档的优先级
+            metadata = self._get_metadata(doc_id)
+            section_title = metadata.get("section_title", "")
+            score_bonus = 0.0
+            if "step" in section_title.lower():
+                score_bonus = 0.02  # 给予步骤节点微小加分，使其在 top-5 竞争中胜出
+
+            fused_score = vector_score + bm25_score + score_bonus
+            fused_docs.append((doc_id, fused_score))
+
+        fused_docs.sort(key=lambda x: x[1], reverse=True)
+        sorted_ids = [doc[0] for doc in fused_docs[:top_k]]
         final_docs = self._resolve_documents(sorted_ids)
         return final_docs
 
@@ -82,18 +122,13 @@ class HybridRetriever(BaseRetriever):
         id_score_pairs.sort(key=lambda x: x[1], reverse=True)
         return [pair[0] for pair in id_score_pairs[:n_results]]
 
-    def _rrf_fusion(self, vector_ids: List[str], bm25_ids: List[str]) -> List[str]:
-        """使用 RRF（倒数排名融合）算法融合两个检索结果。"""
-        fused_scores: dict = {}
-        k = self._rrf_k
-
-        for rank, doc_id in enumerate(vector_ids):
-            fused_scores[doc_id] = fused_scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
-
-        for rank, doc_id in enumerate(bm25_ids):
-            fused_scores[doc_id] = fused_scores.get(doc_id, 0) + 1.0 / (k + rank + 1)
-
-        return sorted(fused_scores.keys(), key=lambda x: fused_scores[x], reverse=True)
+    def _get_bm25_scores(self, query: str) -> dict:
+        """获取查询与所有文档的 BM25 原始分数映射（用于调试）。"""
+        if self._bm25 is None:
+            return {}
+        tokenized_query = list(jieba.cut(query))
+        scores = self._bm25.get_scores(tokenized_query)
+        return {doc_id: float(score) for doc_id, score in zip(self._doc_ids, scores)}
 
     def _resolve_documents(self, sorted_ids: List[str]) -> List[str]:
         """根据排序后的文档 ID 从 ChromaDB 中提取文档内容。"""

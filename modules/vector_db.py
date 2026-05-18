@@ -1,6 +1,7 @@
 import uuid
 import hashlib
 import datetime
+import math
 from typing import List, Optional, Any, Dict
 
 import chromadb
@@ -73,17 +74,59 @@ class MyVectorDBConnector:
         )
 
     # 批量向量化（使用 LangChain 封装好的方法，自动处理 batch）
-    def get_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
-        # embed_documents 是 LangChain 的标准接口，直接传入文本列表即可
-        return self.client.embed_documents(texts)
+    def get_embeddings_batch(self, texts: List[str], batch_size: int = 16) -> List[List[float]]:
+        all_embeddings: List[List[float]] = []
+        total = len(texts)
+        self._embed_dim: Optional[int] = getattr(self, '_embed_dim', None)
+
+        for i in range(0, total, batch_size):
+            batch = texts[i:i + batch_size]
+            try:
+                batch_embeddings = self.client.embed_documents(batch)
+                all_embeddings.extend(batch_embeddings)
+                if self._embed_dim is None and batch_embeddings:
+                    self._embed_dim = len(batch_embeddings[0])
+                logger.debug("Embedding batch %d/%d (%d texts)",
+                             i // batch_size + 1, math.ceil(total / batch_size), len(batch))
+            except Exception:
+                logger.warning("Embedding batch %d/%d failed, falling back to one-by-one",
+                               i // batch_size + 1, math.ceil(total / batch_size))
+                for j, text in enumerate(batch):
+                    emb = self._embed_single(text)
+                    all_embeddings.append(emb)
+        return all_embeddings
+
+    def _embed_single(self, text: str) -> List[float]:
+        dim = self._embed_dim or 1024
+        zero_vec: List[float] = [0.0] * dim
+
+        for attempt, max_len in enumerate([None, 2000, 1000, 500]):
+            try:
+                payload = text[:max_len] if max_len else text
+                result = self.client.embed_documents([payload])
+                if result and result[0]:
+                    return list(result[0])
+            except Exception:
+                if attempt < 3:
+                    continue
+
+        logger.warning("Skipping text that caused NaN embedding (%d chars): %.100s...", len(text), text)
+        return zero_vec
 
     # 添加文档与向量
-    def add_documents(self, documents: List[str], instructions: Optional[List[str]] = None, dedup_strategy: Optional[str] = None) -> None:
+    def add_documents(
+        self,
+        documents: List[str],
+        instructions: Optional[List[str]] = None,
+        dedup_strategy: Optional[str] = None,
+        custom_metadatas: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         """
         向向量数据库添加文档。
         :param documents: 存入数据库的原始文本（如答案、段落内容）
         :param instructions: (可选) 用于生成向量的文本（如问题、指令）。如果不传，则默认用 documents 生成向量
         :param dedup_strategy: (可选) 去重策略，"skip" 跳过重复，"overwrite" 覆盖重复。默认使用 config.dedup_strategy
+        :param custom_metadatas: (可选) 自定义元数据列表，与 documents 一一对应，会与内部生成的 md5/timestamp 合并
         """
         if dedup_strategy is None:
             dedup_strategy = self.config.dedup_strategy
@@ -102,15 +145,18 @@ class MyVectorDBConnector:
         # 根据去重策略筛选文档
         valid_docs = []
         valid_hashes = []
+        valid_custom_metas: List[Dict[str, Any]] = []
         overwrite_count = 0
         skip_count = 0
         for i, (doc, doc_hash) in enumerate(zip(documents, doc_hashes)):
+            custom_meta = custom_metadatas[i] if custom_metadatas and i < len(custom_metadatas) else {}
             if doc_hash in existing_hashes:
                 if dedup_strategy == "overwrite":
                     self.collection.delete(ids=[existing_hashes[doc_hash]])
                     del existing_hashes[doc_hash]
                     valid_docs.append(doc)
                     valid_hashes.append(doc_hash)
+                    valid_custom_metas.append(custom_meta)
                     overwrite_count += 1
                 else:
                     logger.info(f"跳过重复文档 (MD5: {doc_hash[:8]}...)")
@@ -118,6 +164,7 @@ class MyVectorDBConnector:
             else:
                 valid_docs.append(doc)
                 valid_hashes.append(doc_hash)
+                valid_custom_metas.append(custom_meta)
 
         if not valid_docs:
             logger.warning("所有文档均为重复内容，未添加任何文档")
@@ -127,6 +174,13 @@ class MyVectorDBConnector:
             logger.info(f"覆盖 {overwrite_count} 条重复文档")
         if skip_count > 0:
             logger.info(f"跳过 {skip_count} 条重复文档")
+
+        valid_docs, valid_hashes, valid_custom_metas = self._filter_empty(
+            valid_docs, valid_hashes, valid_custom_metas
+        )
+        if not valid_docs:
+            logger.warning("过滤后无有效文档")
+            return
 
         # 生成向量时使用 instructions 或 documents
         if instructions is not None:
@@ -138,13 +192,25 @@ class MyVectorDBConnector:
 
         embeddings = self.get_embeddings_batch(texts_to_embed)
 
+        valid_docs, valid_hashes, valid_custom_metas, embeddings = self._filter_zero_embeddings(
+            valid_docs, valid_hashes, valid_custom_metas, embeddings
+        )
+        if not valid_docs:
+            logger.warning("所有文档的 embedding 均生成失败，未添加任何文档")
+            return
+
         # 使用 UUID 生成唯一 ID
         ids = [str(uuid.uuid4()) for _ in range(len(valid_docs))]
 
-        # 构建元数据
+        # 构建元数据（合并自定义元数据）
         metadatas = [
-            {"md5": md5_hash, "timestamp": datetime.datetime.now().isoformat(), "source": "add_documents"}
-            for md5_hash in valid_hashes
+            {
+                "md5": md5_hash,
+                "timestamp": datetime.datetime.now().isoformat(),
+                "source": "add_documents",
+                **valid_custom_metas[i],
+            }
+            for i, md5_hash in enumerate(valid_hashes)
         ]
 
         self.collection.add(
@@ -167,6 +233,51 @@ class MyVectorDBConnector:
 
         logger.info(f"成功存入 {len(valid_docs)} 条数据，当前库中共有: {self.collection.count()} 条")
 
+    @staticmethod
+    def _filter_empty(
+        docs: List[str],
+        hashes: List[str],
+        metas: List[Dict[str, Any]],
+    ) -> tuple:
+        filtered_docs = []
+        filtered_hashes = []
+        filtered_metas = []
+        skipped = 0
+        for doc, h, meta in zip(docs, hashes, metas):
+            if doc and doc.strip():
+                filtered_docs.append(doc)
+                filtered_hashes.append(h)
+                filtered_metas.append(meta)
+            else:
+                skipped += 1
+        if skipped > 0:
+            logger.info(f"过滤掉 {skipped} 条空内容片段")
+        return filtered_docs, filtered_hashes, filtered_metas
+
+    @staticmethod
+    def _filter_zero_embeddings(
+        docs: List[str],
+        hashes: List[str],
+        metas: List[Dict[str, Any]],
+        embeddings: List[List[float]],
+    ) -> tuple:
+        filtered_docs = []
+        filtered_hashes = []
+        filtered_metas = []
+        filtered_embeddings = []
+        skipped = 0
+        for doc, h, meta, emb in zip(docs, hashes, metas, embeddings):
+            if emb and not all(v == 0.0 for v in emb):
+                filtered_docs.append(doc)
+                filtered_hashes.append(h)
+                filtered_metas.append(meta)
+                filtered_embeddings.append(emb)
+            else:
+                skipped += 1
+        if skipped > 0:
+            logger.warning(f"跳过 {skipped} 条 embedding 生成失败的片段（模型返回 NaN）")
+        return filtered_docs, filtered_hashes, filtered_metas, filtered_embeddings
+
     def rebuild_bm25_index(self) -> None:
         """
         从 ChromaDB 重新拉取全部文档，重建 BM25 索引。
@@ -186,51 +297,8 @@ class MyVectorDBConnector:
     # 检索向量数据库
 
     def hybrid_search(self, query: str, top_k: int = 5) -> List[str]:
-        # --- 1. 向量检索 ---
-        query_embedding = self.client.embed_query(query)
-        vector_results = self.collection.query(
-            query_embeddings=[query_embedding], n_results=top_k * 3
-        )
-        # 【修改点1】ChromaDB返回的是二维列表，我们需要取第一个元素来“拍平”它
-        vector_docs = vector_results['documents'][0] if vector_results['documents'] else []
-        vector_ids = vector_results['ids'][0] if vector_results['ids'] else []
-
-        # --- 2. BM25 关键词检索 ---
-        bm25_top_ids = []
-        if self.bm25 is not None:
-            tokenized_query = list(jieba.cut(query))
-            bm25_scores = self.bm25.get_scores(tokenized_query)
-            id_score_pairs = list(zip(self.doc_ids, bm25_scores))
-            id_score_pairs.sort(key=lambda x: x[1], reverse=True)  # 按分数排序
-            bm25_top_ids = [pair[0] for pair in id_score_pairs[:top_k * 3]]  # 与向量检索同宽，避免关键片段被遗漏
-
-        # --- 3. 结果融合 (RRF 倒数排名融合) ---
-        fused_scores = {}
-        k = self.config.rrf_k
-
-        # 【修改点2】现在 vector_ids 已经是一维列表了，可以直接遍历
-        for rank, doc_id in enumerate(vector_ids):
-            fused_scores[doc_id] = fused_scores.get(doc_id, 0) + 1 / (k + rank + 1)
-
-        for rank, doc_id in enumerate(bm25_top_ids):
-            fused_scores[doc_id] = fused_scores.get(doc_id, 0) + 1 / (k + rank + 1)
-
-        # 按融合分数从高到低排序
-        sorted_ids = sorted(fused_scores.keys(), key=lambda x: fused_scores[x], reverse=True)
-
-        # --- 4. 提取最终文档 ---
-        final_docs = []
-        if sorted_ids:
-            # 从 ChromaDB 中根据排好序的 ID 提取出最终的文档内容
-            all_data = self.collection.get(ids=sorted_ids[:top_k], include=["documents"])
-
-            # 【核心修复】使用 zip 确保 ID 和 文档内容精准一一映射，防止顺序错乱
-            id_to_doc = {doc_id: doc for doc_id, doc in zip(all_data["ids"], all_data["documents"])}
-
-            # 按照 RRF 融合后的排名顺序提取文档
-            final_docs = [id_to_doc[doc_id] for doc_id in sorted_ids[:top_k] if doc_id in id_to_doc]
-
-        return final_docs
+        """混合检索：委托给内部 HybridRetriever（包含 Metadata Boost 逻辑）。"""
+        return self._hybrid_retriever.search(query, top_k)
 
 
     def search(self, query: str, top_k: int) -> Dict[str, Any]:

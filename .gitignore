@@ -10,3 +10,5 @@ __pycache__/
 .pytest_cache/
 logs/
 .coverage
+tests
+check_db.py

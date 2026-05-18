@@ -1,3 +1,5 @@
+<<<<<<< HEAD
+
 # QA-RAG 智能问答系统
 
 基于检索增强生成（RAG）技术的智能问答系统，支持向量检索与 BM25 关键词检索的混合搜索模式，提供灵活可配置的 Prompt 策略，可快速构建领域专属的知识库问答应用。
@@ -13,15 +15,15 @@
 
 ## 技术栈
 
-| 技术 | 用途 |
-|------|------|
-| Python 3.10+ | 核心运行环境 |
-| LangChain | LLM 和 Embedding 统一接口 |
-| ChromaDB | 向量数据库，持久化存储 |
-| Ollama | 本地 Embedding 模型服务 |
-| BM25 (rank-bm25) | 关键词检索算法 |
-| Jieba | 中文分词工具 |
-| OpenAI SDK | 兼容 OpenAI 接口的 LLM |
+| 技术               | 用途                   |
+| ---------------- | -------------------- |
+| Python 3.10+     | 核心运行环境               |
+| LangChain        | LLM 和 Embedding 统一接口 |
+| ChromaDB         | 向量数据库，持久化存储          |
+| Ollama           | 本地 Embedding 模型服务    |
+| BM25 (rank-bm25) | 关键词检索算法              |
+| Jieba            | 中文分词工具               |
+| OpenAI SDK       | 兼容 OpenAI 接口的 LLM    |
 
 ## 安装与配置
 
@@ -33,7 +35,7 @@
 ### 1. 安装依赖
 
 ```bash
-pip install langchain langchain-openai langchain-ollama chromadb rank-bm25 jieba python-dotenv tenacity
+pip install -r  requirements.txt
 ```
 
 ### 2. 安装并启动 Ollama
@@ -86,38 +88,38 @@ DEDUP_STRATEGY=skip
 PROMPT_STRATEGY=strict
 ```
 
-| 环境变量 | 说明 | 默认值 | 必填 |
-|----------|------|--------|------|
-| `LLM_API_KEY` | LLM API 密钥 | 无 | 是 |
-| `LLM_MODEL` | 使用的模型名称 | 无 | 是 |
-| `LLM_BASE_URL` | LLM API 地址 | 无 | 是 |
-| `EMBEDDING_MODEL` | Ollama Embedding 模型 | `bge-m3:567m` | 否 |
-| `VECTOR_DB_PATH` | 向量数据持久化路径 | `./chroma_data` | 否 |
-| `CHUNK_SIZE` | 文本切分块大小 | `500` | 否 |
-| `CHUNK_OVERLAP` | 切分块重叠字符数 | `50` | 否 |
-| `TOP_K` | 检索返回的文档数量 | `5` | 否 |
-| `RRF_K` | RRF 融合算法超参数 k | `60` | 否 |
-| `TEMPERATURE` | LLM 生成温度 | `0.0` | 否 |
-| `MAX_TOKENS` | LLM 最大生成 token 数 | `2048` | 否 |
-| `LOG_LEVEL` | 日志级别 | `INFO` | 否 |
-| `DEDUP_STRATEGY` | 文档去重策略 | `skip` | 否 |
-| `PROMPT_STRATEGY` | Prompt 策略 | `strict` | 否 |
+| 环境变量              | 说明                  | 默认值             | 必填 |
+| ----------------- | ------------------- | --------------- | -- |
+| `LLM_API_KEY`     | LLM API 密钥          | 无               | 是  |
+| `LLM_MODEL`       | 使用的模型名称             | 无               | 是  |
+| `LLM_BASE_URL`    | LLM API 地址          | 无               | 是  |
+| `EMBEDDING_MODEL` | Ollama Embedding 模型 | `bge-m3:567m`   | 否  |
+| `VECTOR_DB_PATH`  | 向量数据持久化路径           | `./chroma_data` | 否  |
+| `CHUNK_SIZE`      | 文本切分块大小             | `500`           | 否  |
+| `CHUNK_OVERLAP`   | 切分块重叠字符数            | `50`            | 否  |
+| `TOP_K`           | 检索返回的文档数量           | `5`             | 否  |
+| `RRF_K`           | RRF 融合算法超参数 k       | `60`            | 否  |
+| `TEMPERATURE`     | LLM 生成温度            | `0.0`           | 否  |
+| `MAX_TOKENS`      | LLM 最大生成 token 数    | `2048`          | 否  |
+| `LOG_LEVEL`       | 日志级别                | `INFO`          | 否  |
+| `DEDUP_STRATEGY`  | 文档去重策略              | `skip`          | 否  |
+| `PROMPT_STRATEGY` | Prompt 策略           | `strict`        | 否  |
 
 ## 命令使用指南
 
 ### CLI 参数说明
 
-| 参数 | 简写 | 类型 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `--retriever` | `-r` | `default` / `hybrid` | `hybrid` | 检索器类型 |
-| `--query` | `-q` | string | 无 | 单次提问 |
-| `--interactive` | `-i` | flag | `false` | 进入交互问答模式 |
-| `--ingest-qa` | - | string | 无 | 导入 JSONL 格式问答对文件 |
-| `--ingest-text` | - | string | 无 | 导入并切分普通文本文件 |
-| `--rebuild` | - | flag | `false` | 重建 BM25 索引 |
-| `--log-level` | - | string | 无 | 覆盖日志级别 |
-| `--collection` | `-c` | string | `demo` | 向量库集合名称 |
-| `--prompt-strategy` | - | string | `strict` | Prompt 策略 |
+| 参数                  | 简写   | 类型                   | 默认值      | 说明               |
+| ------------------- | ---- | -------------------- | -------- | ---------------- |
+| `--retriever`       | `-r` | `default` / `hybrid` | `hybrid` | 检索器类型            |
+| `--query`           | `-q` | string               | 无        | 单次提问             |
+| `--interactive`     | `-i` | flag                 | `false`  | 进入交互问答模式         |
+| `--ingest-qa`       | -    | string               | 无        | 导入 JSONL 格式问答对文件 |
+| `--ingest-text`     | -    | string               | 无        | 导入并切分普通文本文件      |
+| `--rebuild`         | -    | flag                 | `false`  | 重建 BM25 索引       |
+| `--log-level`       | -    | string               | 无        | 覆盖日志级别           |
+| `--collection`      | `-c` | string               | `demo`   | 向量库集合名称          |
+| `--prompt-strategy` | -    | string               | `strict` | Prompt 策略        |
 
 ### 数据导入
 
@@ -213,10 +215,10 @@ python main.py -q "测试问题" --log-level DEBUG
 
 ### 数据切分策略
 
-| 参数 | 说明 | 建议 |
-|------|------|------|
-| `CHUNK_SIZE` | 每个切分块的最大字符数 | 短文/问答对：200-500；长文档：500-1000 |
-| `CHUNK_OVERLAP` | 相邻切分块之间的重叠字符数 | 一般为 CHUNK_SIZE 的 10%-20% |
+| 参数              | 说明            | 建议                          |
+| --------------- | ------------- | --------------------------- |
+| `CHUNK_SIZE`    | 每个切分块的最大字符数   | 短文/问答对：200-500；长文档：500-1000 |
+| `CHUNK_OVERLAP` | 相邻切分块之间的重叠字符数 | 一般为 CHUNK\_SIZE 的 10%-20%   |
 
 较小的 `CHUNK_SIZE` 提高检索精度，较大的 `CHUNK_SIZE` 保留更多上下文。
 
@@ -235,11 +237,11 @@ python main.py -q "测试问题" --log-level DEBUG
 
 ### Prompt 策略选择
 
-| 策略 | 行为 | 适用场景 |
-|------|------|----------|
-| `strict` | 仅依据已知信息回答，信息不足时回复"无法回答" | 法律、医疗、安全等需要高准确性的场景 |
-| `balanced` | 优先使用已知信息，不足时可补充常识并标注 | 一般知识问答、内部咨询 |
-| `creative` | 自由运用知识，参考信息仅作参考 | 头脑风暴、创意分析、开放性讨论 |
+| 策略         | 行为                      | 适用场景               |
+| ---------- | ----------------------- | ------------------ |
+| `strict`   | 仅依据已知信息回答，信息不足时回复"无法回答" | 法律、医疗、安全等需要高准确性的场景 |
+| `balanced` | 优先使用已知信息，不足时可补充常识并标注    | 一般知识问答、内部咨询        |
+| `creative` | 自由运用知识，参考信息仅作参考         | 头脑风暴、创意分析、开放性讨论    |
 
 使用示例：
 
@@ -249,8 +251,8 @@ python main.py -q "分析公司安全策略" --prompt-strategy balanced
 
 ### 性能优化建议
 
-1. **合理设置 TOP_K**：增大 `TOP_K` 可提高回答质量，但会增加上下文长度和 token 消耗
-2. **调整 RRF_K**：默认 60，较小的值让排名更敏感，较大的值让排名更平滑
+1. **合理设置 TOP\_K**：增大 `TOP_K` 可提高回答质量，但会增加上下文长度和 token 消耗
+2. **调整 RRF\_K**：默认 60，较小的值让排名更敏感，较大的值让排名更平滑
 3. **批量导入**：一次性导入更多数据，减少多次调用的开销
 4. **使用 hybrid 检索**：混合检索在中文场景下效果优于纯向量检索
 5. **定期重建索引**：在大量增删数据后，使用 `--rebuild` 确保 BM25 索引与向量数据一致
@@ -279,6 +281,7 @@ A: 系统默认启用去重策略（`DEDUP_STRATEGY=skip`），重复文档会�
 **需求**：企业需要员工掌握信息安全规章制度，并提供随时可查询的问答服务。
 
 **方案**：
+
 1. 将企业安全手册、规章制度整理为 JSONL 问答对格式
 2. 导入系统：`python main.py --ingest-qa ./data/security_qa.jsonl`
 3. 使用 `strict` 策略确保回答的准确性：`python main.py -i --prompt-strategy strict`
@@ -291,6 +294,7 @@ A: 系统默认启用去重策略（`DEDUP_STRATEGY=skip`），重复文档会�
 **需求**：为产品建立智能客服，减少人工客服压力。
 
 **方案**：
+
 1. 将产品 FAQ、操作手册整理为 JSONL 格式
 2. 导入数据：`python main.py --ingest-qa ./data/product_faq.jsonl`
 3. 使用 `balanced` 策略，允许在知识库不足时适当补充：`python main.py -i --prompt-strategy balanced`
@@ -303,6 +307,7 @@ A: 系统默认启用去重策略（`DEDUP_STRATEGY=skip`），重复文档会�
 **需求**：研究者需要快速检索和问答特定领域的学术文献。
 
 **方案**：
+
 1. 将领域文献摘要、关键结论整理为文本文件
 2. 导入并自动切分：`python main.py --ingest-text ./data/research_papers.txt`
 3. 使用 `creative` 策略进行开放性分析：`python main.py -i --prompt-strategy creative`
@@ -360,4 +365,11 @@ pytest --cov=modules --cov-report=term-missing
 
 ## 许可证
 
-本项目仅供学习和研究使用。
+# 本项目仅供学习和研究使用。
+
+# QARAG
+
+基于 RAG 架构的智能问答系统 —— 混合向量/关键词检索 + 可配置 Prompt 策略 + 插件化检索引擎
+
+> > > > > > > 574106f2c070c3b3310409dab4182bc6b1d5f7b3
+

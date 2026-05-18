@@ -46,9 +46,9 @@ def check_embedding_health() -> bool:
         return False
 
 
-def get_llm_answer(vector_db, user_query, llm=llm, retriever_type: str = "hybrid", prompt_strategy: str = "strict") -> Optional[str]:
+def get_llm_answer(vector_db, user_query, llm=llm, retriever_type: str = "hybrid", prompt_strategy: str = "strict", top_k: int = 5) -> Optional[str]:
     if retriever_type == "hybrid":
-        results = vector_db.hybrid_search(user_query, 5)
+        results = vector_db.hybrid_search(user_query, top_k)
         if results:
             contents = '\n'.join(results)
             logger.info("--- 检索到的相关片段 ---")
@@ -58,7 +58,7 @@ def get_llm_answer(vector_db, user_query, llm=llm, retriever_type: str = "hybrid
             contents = ""
             logger.info("未检索到相关文档！")
     elif retriever_type == "default":
-        results = vector_db.search(user_query, 5)
+        results = vector_db.search(user_query, top_k)
         if results['documents'] and results['documents'][0]:
             contents = '\n'.join(results['documents'][0])
             logger.info("--- 检索到的相关片段 ---")
