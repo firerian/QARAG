@@ -55,6 +55,24 @@ class Config:
     prompt_strategy: str = field(
         default_factory=lambda: os.getenv("PROMPT_STRATEGY", "strict")
     )
+    metadata_boost_enabled: bool = field(
+        default_factory=lambda: os.getenv("METADATA_BOOST_ENABLED", "true").lower() == "true"
+    )
+    metadata_bonus_max: float = field(
+        default_factory=lambda: float(os.getenv("METADATA_BONUS_MAX", "0.05"))
+    )
+    metadata_step_bonus: float = field(
+        default_factory=lambda: float(os.getenv("METADATA_STEP_BONUS", "0.05"))
+    )
+    metadata_level_bonus_1: float = field(
+        default_factory=lambda: float(os.getenv("METADATA_LEVEL_BONUS_1", "0.03"))
+    )
+    metadata_level_bonus_2: float = field(
+        default_factory=lambda: float(os.getenv("METADATA_LEVEL_BONUS_2", "0.02"))
+    )
+    metadata_level_bonus_3: float = field(
+        default_factory=lambda: float(os.getenv("METADATA_LEVEL_BONUS_3", "0.01"))
+    )
 
     def validate(self) -> None:
         """

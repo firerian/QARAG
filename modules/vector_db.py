@@ -71,6 +71,7 @@ class MyVectorDBConnector:
             bm25=self.bm25,
             doc_ids=self.doc_ids,
             rrf_k=self.config.rrf_k,
+            config=self.config,
         )
 
     # 批量向量化（使用 LangChain 封装好的方法，自动处理 batch）

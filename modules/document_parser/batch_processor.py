@@ -15,6 +15,7 @@ from modules.document_parser.base import (
 from modules.document_parser.pdf_parser import PDFDocumentParser, PDF_SUPPORT
 from modules.document_parser.html_parser import HTMLDocumentParser, HTML_SUPPORT
 from modules.document_parser.markdown_parser import MarkdownDocumentParser
+from modules.document_parser.json_parser import JSONDocumentParser
 from modules.logger import get_logger
 
 logger = get_logger(__name__)
@@ -23,6 +24,7 @@ SUPPORTED_EXTENSIONS: Set[str] = {
     ".pdf",
     ".html", ".htm",
     ".md", ".markdown", ".mdown", ".mkd",
+    ".json", ".jsonl",
 }
 
 DEFAULT_PARSER_REGISTRY: Dict[str, Type[BaseDocumentParser]] = {}
@@ -39,6 +41,8 @@ def _build_default_registry() -> Dict[str, Type[BaseDocumentParser]]:
     registry[".markdown"] = MarkdownDocumentParser
     registry[".mdown"] = MarkdownDocumentParser
     registry[".mkd"] = MarkdownDocumentParser
+    registry[".json"] = JSONDocumentParser
+    registry[".jsonl"] = JSONDocumentParser
     return registry
 
 

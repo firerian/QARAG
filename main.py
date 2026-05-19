@@ -24,6 +24,8 @@ except ImportError:
 from modules.document_parser.markdown_parser import MarkdownDocumentParser
 PARSER_REGISTRY.update({".md": MarkdownDocumentParser, ".markdown": MarkdownDocumentParser,
                         ".mdown": MarkdownDocumentParser, ".mkd": MarkdownDocumentParser})
+from modules.document_parser.json_parser import JSONDocumentParser
+PARSER_REGISTRY.update({".json": JSONDocumentParser, ".jsonl": JSONDocumentParser})
 
 
 def ingest_qa(vector_db: Any, file_path: str) -> None:
